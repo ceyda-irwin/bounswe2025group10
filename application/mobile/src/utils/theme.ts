@@ -10,6 +10,7 @@ export const colors = {
   lightGray: '#EEEEEE',
   error: '#D32F2F',
   success: '#388E3C',
+  text: '#333333', // Adding text color
 };
 
 export const spacing = {

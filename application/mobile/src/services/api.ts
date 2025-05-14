@@ -133,4 +133,22 @@ export const tipService = {
   },
 };
 
+export const challengeService = {
+  getChallenges: async (): Promise<any> => {
+    const response = await api.get('/api/challenges/');
+    return response.data;
+  },
+  createChallenge: async (challengeData: any): Promise<any> => {
+    const response = await api.post('/api/challenges/', challengeData);
+    return response.data;
+  },
+  contributeToChallenge: async (challengeId: number, amount: number, waste_type: string): Promise<any> => {
+    const response = await api.post(`/api/challenges/${challengeId}/contribute/`, { 
+      amount,
+      waste_type 
+    });
+    return response.data;
+  }
+};
+
 export default api; 

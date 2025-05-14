@@ -167,23 +167,15 @@ def get_top_users(request):
         
         # For leaderboard: get top 10 users
         top_users = all_users_with_waste[:10]
-          # Prepare response data for top users
+        
+        # Prepare response data for top users
         top_users_data = []
         for index, user in enumerate(top_users):
-            # Get the profile image URL with absolute URI
-            profile_picture = None
-            if user.profile_image:
-                if user.profile_image.startswith(('http://', 'https://')):
-                    profile_picture = user.profile_image
-                else:
-                    from django.conf import settings
-                    profile_picture = f"{request.build_absolute_uri(settings.MEDIA_URL)}{user.profile_image}"
-            
             top_users_data.append({
                 'rank': index + 1,
                 'username': user.username,
                 'total_waste': f"{user.total_co2:.4f}",  # CO2 emission formatted to 4 decimals
-                'profile_picture': profile_picture,
+                'profile_picture': user.profile_image_url,
                 'points': user.total_points,
             })
         
@@ -202,20 +194,11 @@ def get_top_users(request):
                         user_rank = index + 1
                         break
                 
-                # Get profile image URL with absolute URI for current user
-                profile_picture = None
-                if request.user.profile_image:
-                    if request.user.profile_image.startswith(('http://', 'https://')):
-                        profile_picture = request.user.profile_image
-                    else:
-                        from django.conf import settings
-                        profile_picture = f"{request.build_absolute_uri(settings.MEDIA_URL)}{request.user.profile_image}"
-                
                 # Get user stats
                 user_stats = {
                     'username': request.user.username,
                     'total_waste': f"{request.user.total_co2:.4f}",
-                    'profile_picture': profile_picture,
+                    'profile_picture': request.user.profile_image_url,
                     'points': request.user.total_points,
                     'rank': user_rank if user_rank else 'Not ranked'
                 }
