@@ -14,9 +14,17 @@ interface Challenge {
   target_amount: number;
   current_progress: number;
   is_public: boolean;
-  waste_type?: string;
-  reward?: any;
-  creator?: any;
+  waste_type: string;
+  reward?: {
+    id: number;
+    title: string;
+    description: string;
+  };
+  creator?: {
+    id: number;
+    username: string;
+    email: string;
+  };
 }
 
 // Available waste types
@@ -39,12 +47,15 @@ export const ChallengesScreen = () => {
   const { userData } = useAuth();
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [loading, setLoading] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [contributing, setContributing] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [targetAmount, setTargetAmount] = useState('');
   const [isPublic, setIsPublic] = useState(true);
+  const [createChallengeWasteType, setCreateChallengeWasteType] = useState(WASTE_TYPES[0]);
   
-  // New state for contribution modal
+  // Contribution modal state
   const [contributionModalVisible, setContributionModalVisible] = useState(false);
   const [selectedChallengeId, setSelectedChallengeId] = useState<number | null>(null);
   const [contributionAmount, setContributionAmount] = useState('');
@@ -54,73 +65,153 @@ export const ChallengesScreen = () => {
     setLoading(true);
     try {
       const response = await challengeService.getChallenges();
-      setChallenges(response); // If backend wraps in {data: [...]}, use response.data
+      setChallenges(response);
     } catch (error) {
-      Alert.alert('Error', 'Failed to fetch challenges');
+      Alert.alert('Error', 'Failed to fetch challenges. Please try again later.');
     } finally {
       setLoading(false);
     }
   };
 
+  const validateTargetAmount = (amount: string): boolean => {
+    const numAmount = parseFloat(amount);
+    return !isNaN(numAmount) && numAmount > 0;
+  };
+
   const createChallenge = async () => {
-    if (!title || !description || !targetAmount) {
-      Alert.alert('Error', 'Please fill in all fields');
+    if (!title.trim()) {
+      Alert.alert('Error', 'Please enter a title');
       return;
     }
+    if (!description.trim()) {
+      Alert.alert('Error', 'Please enter a description');
+      return;
+    }
+    if (!validateTargetAmount(targetAmount)) {
+      Alert.alert('Error', 'Please enter a valid target amount (greater than 0)');
+      return;
+    }
+
+    setCreating(true);
     try {
       await challengeService.createChallenge({
-        title,
-        description,
+        title: title.trim(),
+        description: description.trim(),
         target_amount: parseFloat(targetAmount),
         is_public: isPublic,
+        waste_type: createChallengeWasteType,
       });
+      
+      // Reset form
       setTitle('');
       setDescription('');
       setTargetAmount('');
       setIsPublic(true);
+      setCreateChallengeWasteType(WASTE_TYPES[0]);
+      
+      // Refresh challenges
       fetchChallenges();
+      Alert.alert('Success', 'Challenge created successfully!');
     } catch (error) {
-      Alert.alert('Error', 'Failed to create challenge');
+      Alert.alert('Error', 'Failed to create challenge. Please try again.');
+    } finally {
+      setCreating(false);
     }
   };
 
-  const handleContributePress = (challengeId: number, defaultWasteType?: string) => {
+  const handleContributePress = (challengeId: number, wasteType: string) => {
+    const challenge = challenges.find(c => c.id === challengeId);
+    if (!challenge) {
+      Alert.alert('Error', 'Challenge not found');
+      return;
+    }
+    
     setSelectedChallengeId(challengeId);
-    setSelectedWasteType(defaultWasteType || WASTE_TYPES[0]);
+    setSelectedWasteType(wasteType); // Fixed to challenge's waste type
     setContributionModalVisible(true);
   };
 
   const handleContributionSubmit = async () => {
-    if (!selectedChallengeId || !contributionAmount || parseFloat(contributionAmount) <= 0) {
-      Alert.alert('Error', 'Please enter a valid amount');
+    if (!selectedChallengeId || !validateTargetAmount(contributionAmount)) {
+      Alert.alert('Error', 'Please enter a valid amount (greater than 0)');
       return;
     }
 
-    if (!selectedWasteType) {
-      Alert.alert('Error', 'Please select a waste type');
+    const challenge = challenges.find(c => c.id === selectedChallengeId);
+    if (!challenge) {
+      Alert.alert('Error', 'Challenge not found');
       return;
     }
 
+    setContributing(true);
     try {
       await challengeService.contributeToChallenge(
         selectedChallengeId,
         parseFloat(contributionAmount),
-        selectedWasteType
+        challenge.waste_type
       );
       setContributionModalVisible(false);
       setContributionAmount('');
       setSelectedChallengeId(null);
-      setSelectedWasteType('');
-      fetchChallenges(); // Refresh challenges to show updated progress
-      Alert.alert('Success', 'Waste entry added successfully');
+      fetchChallenges();
+      Alert.alert('Success', 'Contribution added successfully!');
     } catch (error) {
-      Alert.alert('Error', 'Failed to add waste entry');
+      Alert.alert('Error', 'Failed to add contribution. Please try again.');
+    } finally {
+      setContributing(false);
     }
   };
 
   useEffect(() => {
     fetchChallenges();
   }, []);
+
+  const renderChallenge = ({ item }: { item: Challenge }) => {
+    const isCompleted = isChallengeCompleted(item);
+    return (
+      <View style={[
+        styles.challengeItem,
+        isCompleted && styles.completedChallengeItem
+      ]}>
+        <View style={styles.challengeHeader}>
+          <View style={styles.titleContainer}>
+            <Text style={styles.challengeTitle}>{item.title}</Text>
+            {isCompleted && (
+              <Text style={styles.completedIcon}>✅</Text>
+            )}
+          </View>
+          <TouchableOpacity
+            style={[
+              styles.contributeButton,
+              isCompleted && styles.disabledButton
+            ]}
+            onPress={() => handleContributePress(item.id, item.waste_type)}
+            disabled={isCompleted}
+          >
+            <Text style={styles.contributeButtonText}>➕</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.description}>{item.description}</Text>
+        <View style={styles.challengeDetailsContainer}>
+          <View style={styles.wasteTypeTag}>
+            <Text style={styles.wasteTypeTagText}>{item.waste_type}</Text>
+          </View>
+          <View style={styles.progressContainer}>
+            <Text>Progress: </Text>
+            <Text style={isCompleted ? styles.completedText : undefined}>
+              {item.current_progress} / {item.target_amount}
+            </Text>
+          </View>
+        </View>
+        <Text style={styles.visibilityText}>
+          {item.is_public ? 'Public Challenge' : 'Private Challenge'}
+        </Text>
+        {isCompleted && (
+          <Text style={styles.completedMessage}>Challenge Completed! 🎉</Text>
+        )}
+      </View>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -132,74 +223,76 @@ export const ChallengesScreen = () => {
         <FlatList
           data={challenges}
           keyExtractor={(item) => item.id.toString()}
-          renderItem={({ item }) => {
-            const isCompleted = isChallengeCompleted(item);
-            return (
-              <View style={[
-                styles.challengeItem,
-                isCompleted && styles.completedChallengeItem
-              ]}>
-                <View style={styles.challengeHeader}>
-                  <View style={styles.titleContainer}>
-                    <Text style={styles.challengeTitle}>{item.title}</Text>
-                    {isCompleted && (
-                      <Text style={styles.completedIcon}>✅</Text>
-                    )}
-                  </View>
-                  <TouchableOpacity
-                    style={[
-                      styles.contributeButton,
-                      isCompleted && styles.disabledButton
-                    ]}
-                    onPress={() => handleContributePress(item.id)}
-                    disabled={isCompleted}
-                  >
-                    <Text style={styles.contributeButtonText}>➕</Text>
-                  </TouchableOpacity>
-                </View>
-                <Text>{item.description}</Text>
-                <View style={styles.progressContainer}>
-                  <Text>Progress: </Text>
-                  <Text style={isCompleted ? styles.completedText : undefined}>
-                    {item.current_progress} / {item.target_amount}
-                  </Text>
-                </View>
-                <Text>Type: {item.is_public ? 'Public' : 'Private'}</Text>
-                {isCompleted && (
-                  <Text style={styles.completedMessage}>Challenge Completed! 🎉</Text>
-                )}
-              </View>
-            );
-          }}
+          renderItem={renderChallenge}
+          ListEmptyComponent={
+            <Text style={styles.emptyText}>No challenges found</Text>
+          }
         />
       )}
 
       <Text style={styles.subtitle}>Create New Challenge</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Title"
-        value={title}
-        onChangeText={setTitle}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Description"
-        value={description}
-        onChangeText={setDescription}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Target Amount"
-        value={targetAmount}
-        onChangeText={setTargetAmount}
-        keyboardType="numeric"
-      />
-      <TouchableOpacity
-        style={styles.button}
-        onPress={createChallenge}
-      >
-        <Text style={styles.buttonText}>Add Challenge</Text>
-      </TouchableOpacity>
+      <View style={styles.createChallengeForm}>
+        <TextInput
+          style={styles.input}
+          placeholder="Title"
+          value={title}
+          onChangeText={setTitle}
+        />
+        <TextInput
+          style={[styles.input, styles.textArea]}
+          placeholder="Description"
+          value={description}
+          onChangeText={setDescription}
+          multiline
+          numberOfLines={3}
+        />
+        <View style={styles.formRow}>
+          <TextInput
+            style={[styles.input, styles.targetAmountInput]}
+            placeholder="Target Amount"
+            value={targetAmount}
+            onChangeText={setTargetAmount}
+            keyboardType="numeric"
+          />
+          <View style={styles.wasteTypeSelectContainer}>
+            <Text style={styles.wasteTypeLabel}>Waste Type:</Text>
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              style={styles.horizontalWasteTypeList}
+            >
+              {WASTE_TYPES.map((type) => (
+                <TouchableOpacity
+                  key={type}
+                  style={[
+                    styles.createFormWasteTypeButton,
+                    createChallengeWasteType === type && styles.selectedWasteType
+                  ]}
+                  onPress={() => setCreateChallengeWasteType(type)}
+                >
+                  <Text style={[
+                    styles.createFormWasteTypeText,
+                    createChallengeWasteType === type && styles.selectedWasteTypeText
+                  ]}>
+                    {type}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+        <TouchableOpacity
+          style={[styles.button, creating && styles.disabledButton]}
+          onPress={createChallenge}
+          disabled={creating}
+        >
+          {creating ? (
+            <ActivityIndicator color={colors.white} />
+          ) : (
+            <Text style={styles.buttonText}>Create Challenge</Text>
+          )}
+        </TouchableOpacity>
+      </View>
 
       {/* Contribution Modal */}
       <Modal
@@ -210,28 +303,15 @@ export const ChallengesScreen = () => {
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Add Waste Entry</Text>
+            <Text style={styles.modalTitle}>Add Contribution</Text>
             
-            <Text style={styles.inputLabel}>Waste Type:</Text>
-            <ScrollView style={styles.wasteTypeContainer}>
-              {WASTE_TYPES.map((type) => (
-                <TouchableOpacity
-                  key={type}
-                  style={[
-                    styles.wasteTypeButton,
-                    selectedWasteType === type && styles.selectedWasteType
-                  ]}
-                  onPress={() => setSelectedWasteType(type)}
-                >
-                  <Text style={[
-                    styles.wasteTypeText,
-                    selectedWasteType === type && styles.selectedWasteTypeText
-                  ]}>
-                    {type}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+            {selectedChallengeId && (
+              <View style={styles.selectedChallengeInfo}>
+                <Text style={styles.wasteTypeLabel}>
+                  Required Waste Type: {challenges.find(c => c.id === selectedChallengeId)?.waste_type}
+                </Text>
+              </View>
+            )}
 
             <Text style={styles.inputLabel}>Amount:</Text>
             <TextInput
@@ -248,16 +328,22 @@ export const ChallengesScreen = () => {
                 onPress={() => {
                   setContributionModalVisible(false);
                   setContributionAmount('');
-                  setSelectedWasteType('');
+                  setSelectedChallengeId(null);
                 }}
+                disabled={contributing}
               >
                 <Text style={styles.buttonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.button}
+                style={[styles.button, contributing && styles.disabledButton]}
                 onPress={handleContributionSubmit}
+                disabled={contributing}
               >
-                <Text style={styles.buttonText}>Submit</Text>
+                {contributing ? (
+                  <ActivityIndicator color={colors.white} />
+                ) : (
+                  <Text style={styles.buttonText}>Submit</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -268,12 +354,22 @@ export const ChallengesScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { ...commonStyles.container, padding: spacing.md },
+  container: { ...commonStyles.container },
   title: { ...typography.h1, color: colors.primary, marginBottom: spacing.md },
   subtitle: { ...typography.h2, color: colors.primary, marginVertical: spacing.sm },
   input: { ...commonStyles.input },
-  button: { ...commonStyles.button, marginTop: spacing.sm },
+  textArea: {
+    height: 80,
+    textAlignVertical: 'top',
+    paddingTop: spacing.sm,
+  },
+  button: { ...commonStyles.button },
   buttonText: { ...commonStyles.buttonText },
+  emptyText: {
+    textAlign: 'center',
+    color: colors.gray,
+    marginVertical: spacing.lg,
+  },
   challengeItem: {
     backgroundColor: '#f0f0f0',
     padding: spacing.sm,
@@ -281,9 +377,13 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   completedChallengeItem: {
-    backgroundColor: '#e6ffe6', // Light green background
-    borderColor: '#4CAF50', // Green border
+    backgroundColor: '#e6ffe6',
+    borderColor: colors.success,
     borderWidth: 1,
+  },
+  description: {
+    marginVertical: spacing.xs,
+    color: colors.text,
   },
   titleContainer: {
     flexDirection: 'row',
@@ -297,21 +397,20 @@ const styles = StyleSheet.create({
   progressContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: spacing.xs,
   },
   completedText: {
-    color: '#4CAF50',
+    color: colors.success,
     fontWeight: 'bold',
   },
   completedMessage: {
-    color: '#4CAF50',
+    color: colors.success,
     fontWeight: 'bold',
     textAlign: 'center',
     marginTop: spacing.sm,
     fontSize: 16,
   },
   disabledButton: {
-    backgroundColor: '#cccccc', // Gray out the contribute button for completed challenges
+    backgroundColor: colors.gray,
     opacity: 0.5,
   },
   challengeTitle: { ...typography.h2, fontWeight: 'bold' },
@@ -327,7 +426,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   contributeButtonText: {
-    color: 'white',
+    color: colors.white,
     fontSize: 16,
   },
   modalContainer: {
@@ -337,7 +436,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   modalContent: {
-    backgroundColor: 'white',
+    backgroundColor: colors.white,
     padding: spacing.lg,
     borderRadius: 8,
     width: '80%',
@@ -353,7 +452,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   cancelButton: {
-    backgroundColor: colors.error || '#ff4444',
+    backgroundColor: colors.error,
     marginRight: spacing.sm,
   },
   inputLabel: {
@@ -362,28 +461,79 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
     color: colors.text,
   },
-  wasteTypeContainer: {
-    maxHeight: 150,
-    marginBottom: spacing.md,
-  },
-  wasteTypeButton: {
+  selectedChallengeInfo: {
+    backgroundColor: colors.lightGray,
     padding: spacing.sm,
     borderRadius: 8,
+    marginBottom: spacing.md,
+  },
+  challengeDetailsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginVertical: spacing.xs,
+  },
+  wasteTypeTag: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: 16,
+  },
+  wasteTypeTagText: {
+    color: colors.white,
+    fontWeight: 'bold',
+    fontSize: 12,
+  },
+  visibilityText: {
+    color: colors.gray,
+    fontSize: 12,
+    marginTop: spacing.xs,
+  },
+  createChallengeForm: {
+    backgroundColor: colors.lightGray,
+    padding: spacing.md,
+    borderRadius: 8,
+    marginBottom: spacing.lg,
+  },
+  formRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: spacing.sm,
+  },
+  targetAmountInput: {
+    flex: 0.4,
+    marginRight: spacing.sm,
+    marginBottom: 0,
+  },
+  wasteTypeSelectContainer: {
+    flex: 0.6,
+  },
+  wasteTypeLabel: {
+    fontSize: 12,
+    color: colors.gray,
     marginBottom: spacing.xs,
-    backgroundColor: '#f0f0f0',
+  },
+  horizontalWasteTypeList: {
+    flexGrow: 0,
+  },
+  createFormWasteTypeButton: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: 16,
+    backgroundColor: colors.white,
+    marginRight: spacing.xs,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: colors.primary,
+  },
+  createFormWasteTypeText: {
+    fontSize: 12,
+    color: colors.primary,
   },
   selectedWasteType: {
     backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  wasteTypeText: {
-    fontSize: 16,
-    color: colors.text,
   },
   selectedWasteTypeText: {
-    color: 'white',
+    color: colors.white,
     fontWeight: 'bold',
   },
 });
